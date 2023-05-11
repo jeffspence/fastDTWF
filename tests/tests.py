@@ -1,6 +1,8 @@
-import fastDTWF
+import fastDTWF.fastDTWF as fastDTWF
 import scipy.stats
+import scipy.special
 import torch
+import numpy as np
 
 
 # TODO
@@ -53,19 +55,48 @@ def test_wright_fisher_ps_mutate_first():
     assert torch.allclose(other_nudge_ps, (1-1e-5)*freqs)
 
 
-# TODO
 def test_numba_hyp_pmf_single():
-    pass
+    check = fastDTWF._numba_hyp_pmf_single(3, 100, 45, 17)
+    true = scipy.stats.hypergeom.pmf(3, 100, 17, 45)
+    assert np.isclose(true, check)
+
+    for _ in range(100):
+        N = np.random.randint(10, 1000)
+        K = np.random.randint(1, N)
+        n = np.random.randint(1, N)
+        k = np.random.randint(n)
+        check = fastDTWF._numba_hyp_pmf_single(k, N, K, n)
+        true = scipy.stats.hypergeom.pmf(k, N, n, K)
+        assert np.isclose(true, check)
 
 
-# TODO
 def test_numba_hyp_pmf():
-    pass
+    check = fastDTWF._numba_hyp_pmf(3, 10, 100, 17, 45)
+    true = scipy.stats.hypergeom.pmf(range(3, 11), 100, 45, 17)
+    assert np.allclose(true, check)
+
+    for _ in range(100):
+        N = np.random.randint(10, 1000)
+        K = np.random.randint(1, N)
+        n = np.random.randint(2, N)
+        kmax = np.random.randint(1, n)
+        kmin = np.random.randint(kmax)
+        check = fastDTWF._numba_hyp_pmf(kmin, kmax, N, K, n)
+        true = scipy.stats.hypergeom.pmf(range(kmin, kmax+1), N, n, K)
+        assert np.allclose(true, check)
 
 
-# TODO
 def test_torch_hyp_pmf():
-    pass
+    lfacts = torch.lgamma(torch.arange(1001, dtype=torch.float64) + 1)
+    for _ in range(100):
+        N = np.random.randint(10, 1000)
+        K = np.random.randint(1, N)
+        n = np.random.randint(2, N)
+        kmax = np.random.randint(1, n)
+        kmin = np.random.randint(kmax)
+        check = fastDTWF._torch_hyp_pmf(kmin, kmax, N, K, n, lfacts)
+        true = fastDTWF._numba_hyp_pmf(kmin, kmax, N, K, n)
+        assert np.allclose(true, check.detach().numpy())
 
 
 # TODO
@@ -123,9 +154,11 @@ def test_naive_multiply():
     pass
 
 
-# TODO
 def test_make_binom_coefficients():
-    pass
+    for n in [5, 10, 50, 500]:
+        true = np.log(scipy.special.binom(n, range(n+1)))
+        check = fastDTWF._make_binom_coefficients(n)
+        assert np.allclose(true, check.detach().numpy())
 
 
 # TODO

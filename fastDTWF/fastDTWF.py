@@ -1028,7 +1028,7 @@ def naive_multiply(
 
 
 def _make_binom_coefficients(N: int) -> torch.DoubleTensor:
-    """Create the log inomial coefficients (N choose k) for k in 1...N"""
+    """Create the log binomial coefficients (N choose k) for k in 1...N"""
 
     Nlgamma = torch.lgamma(torch.tensor(N + 1, dtype=torch.float64))
     k_tensor = torch.arange(N + 1, dtype=torch.float64)
