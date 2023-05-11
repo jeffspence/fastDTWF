@@ -904,8 +904,8 @@ def diffusion_sfs(pop_size: int, s_het: float) -> npt.NDArray[np.float64]:
 
     # Can use the classic 1 / k result for neutrality
     if s_het == 0:
-        raw = 1 / np.arange(pop_size + 1)
-        raw[0] = 0
+        raw = np.zeros(pop_size+1)
+        raw[1:] = 1 / np.arange(1, pop_size + 1)
         raw[-1] = 0
         return raw / raw.sum()
 
