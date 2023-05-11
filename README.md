@@ -3,7 +3,7 @@
 Tools to compute likelihoods under the discrete-time Wright-Fisher model.
 
 This package is meant to be used as an API.
-Install the package and then import wfmoments and use the functions
+Install the package and then import fastDTWF and use the functions
 to compute population and sample likelihoods under equilibrium and
 non-equilibrium demographies.
 
