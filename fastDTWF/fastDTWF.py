@@ -582,9 +582,6 @@ def naive_hypergeometric_sample(
     return to_return
 
 
-# returns a matrix where entry [i][j]
-# is the probability of going from "condensed" state i
-# to "condensed" state j in one generation.
 def make_condensed_matrix(
     index_sets: torch.LongTensor,
     trunc_p_list: torch.DoubleTensor,
@@ -1042,9 +1039,9 @@ def mat_multiply_from_coarse(
     trunc_p_list: torch.DoubleTensor,
     pop_size: int,
     row_eps: float,
-    no_fix: float,
+    no_fix: bool,
     sfs: bool,
-    injection_rate: bool,
+    injection_rate: float,
     bcoefs: torch.DoubleTensor = None,
 ) -> torch.DoubleTensor:
     """
@@ -1083,6 +1080,7 @@ def mat_multiply_from_coarse(
 
     if sfs:
         assert not no_fix
+        assert trunc_mass[0] == 0.
 
     to_return = torch.zeros(pop_size + 1, dtype=torch.float64)
 
