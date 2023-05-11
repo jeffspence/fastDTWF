@@ -772,81 +772,6 @@ def diffusion_stationary_strong_s(
     return to_return / to_return.sum()
 
 
-def diffusion_sfs(pop_size: int, s_het: float) -> npt.NDArray[np.float64]:
-    """
-    Compute the SFS under the WF diffusion
-
-    This is taken from Bustamante et al. 2001, and is similar to what is
-    implemented in Krukov and Gravel 2021. Essentially, the infinite population
-    size SFS at stationarity is known, but one then needs to numerically
-    integrate that against the binomial PMF to obtain the finite population
-    size SFS.
-
-    Args:
-        pop_size: The number of haploids in the population
-        s_het: The strength of genic selection against the "1" allele
-
-    Returns:
-        A numpy.ndarray where entry i is the probability of seeing i "1"
-        alleles in the population, conditioned on the position being
-        segregating, under the infinite sites assumption.i
-    """
-
-    # Can use the classic 1 / k result for neutrality
-    if s_het == 0:
-        raw = 1 / np.arange(pop_size + 1)
-        raw[0] = 0
-        raw[-1] = 0
-        return raw / raw.sum()
-
-    scaled_s_het = pop_size * s_het
-    to_return = np.zeros(pop_size + 1)
-
-    # For each entry we have to integrate the PMF Binomial(k; N, p) against the
-    # analytical formula for the continuous infinite population size function
-    # for p
-    for k in range(1, pop_size):
-
-        # Define the analytical result for the continous function
-        def fun(x):
-            first_bit = np.exp(
-                math.lgamma(pop_size + 1)
-                - math.lgamma(pop_size - k + 1)
-                - math.lgamma(k + 1)
-                + (k - 1) * np.log(x)
-                + (pop_size - k - 1) * np.log(1 - x)
-            )
-
-            # If scaled_s_het > 500 we start running into overflow issues
-            # as we are compute exp(scaled_s_het * (1-x)) - 1 in the numerator
-            # and exp(scaled_s_het) - 1 in the denominator.
-            # But in that case, we expect exp(scaled_s_het * (1-x)) >> 1 and
-            # also exp(scaled_s_het) >> 1, in which case expm1 is essentially
-            # equal to just exp, and then we can analytically cancel out the
-            # numerator and denominator, resulting in just exp(-scaled_s_het*x)
-            if scaled_s_het < 500:
-                second_bit = np.expm1(scaled_s_het * (1 - x))
-                third_bit = np.expm1(scaled_s_het)
-            else:
-                second_bit = np.exp(-scaled_s_het * x)
-                third_bit = 1.0
-            return first_bit * second_bit / third_bit
-
-        # Make sure there are enough points near the edges where things get
-        # weird in the integration
-        pts = (10 ** np.linspace(-10, -5)).tolist()
-        pts += np.linspace(10**-5, 1-10**-5).tolist()
-        pts += (1 - (10 ** np.linspace(-10, -5))).tolist()
-
-        # Perform the integral, but change the defaults so that it tries harder
-        # and is more accurate
-        to_return[k] = scipy.integrate.quad(
-            fun, 0, 1, limit=500, maxp1=500, limlst=500, points=pts
-        )[0]
-
-    return to_return / to_return.sum()
-
-
 def diffusion_stationary(
     pop_size: int, s_het: float, mu_0_to_1: float, mu_1_to_0: float
 ) -> torch.DoubleTensor:
@@ -954,6 +879,81 @@ def diffusion_stationary(
     )
 
     # Normalize the result to make sure its a real mass function
+    return to_return / to_return.sum()
+
+
+def diffusion_sfs(pop_size: int, s_het: float) -> npt.NDArray[np.float64]:
+    """
+    Compute the SFS under the WF diffusion
+
+    This is taken from Bustamante et al. 2001, and is similar to what is
+    implemented in Krukov and Gravel 2021. Essentially, the infinite population
+    size SFS at stationarity is known, but one then needs to numerically
+    integrate that against the binomial PMF to obtain the finite population
+    size SFS.
+
+    Args:
+        pop_size: The number of haploids in the population
+        s_het: The strength of genic selection against the "1" allele
+
+    Returns:
+        A numpy.ndarray where entry i is the probability of seeing i "1"
+        alleles in the population, conditioned on the position being
+        segregating, under the infinite sites assumption.i
+    """
+
+    # Can use the classic 1 / k result for neutrality
+    if s_het == 0:
+        raw = 1 / np.arange(pop_size + 1)
+        raw[0] = 0
+        raw[-1] = 0
+        return raw / raw.sum()
+
+    scaled_s_het = pop_size * s_het
+    to_return = np.zeros(pop_size + 1)
+
+    # For each entry we have to integrate the PMF Binomial(k; N, p) against the
+    # analytical formula for the continuous infinite population size function
+    # for p
+    for k in range(1, pop_size):
+
+        # Define the analytical result for the continous function
+        def fun(x):
+            first_bit = np.exp(
+                math.lgamma(pop_size + 1)
+                - math.lgamma(pop_size - k + 1)
+                - math.lgamma(k + 1)
+                + (k - 1) * np.log(x)
+                + (pop_size - k - 1) * np.log(1 - x)
+            )
+
+            # If scaled_s_het > 500 we start running into overflow issues
+            # as we are compute exp(scaled_s_het * (1-x)) - 1 in the numerator
+            # and exp(scaled_s_het) - 1 in the denominator.
+            # But in that case, we expect exp(scaled_s_het * (1-x)) >> 1 and
+            # also exp(scaled_s_het) >> 1, in which case expm1 is essentially
+            # equal to just exp, and then we can analytically cancel out the
+            # numerator and denominator, resulting in just exp(-scaled_s_het*x)
+            if scaled_s_het < 500:
+                second_bit = np.expm1(scaled_s_het * (1 - x))
+                third_bit = np.expm1(scaled_s_het)
+            else:
+                second_bit = np.exp(-scaled_s_het * x)
+                third_bit = 1.0
+            return first_bit * second_bit / third_bit
+
+        # Make sure there are enough points near the edges where things get
+        # weird in the integration
+        pts = (10 ** np.linspace(-10, -5)).tolist()
+        pts += np.linspace(10**-5, 1-10**-5).tolist()
+        pts += (1 - (10 ** np.linspace(-10, -5))).tolist()
+
+        # Perform the integral, but change the defaults so that it tries harder
+        # and is more accurate
+        to_return[k] = scipy.integrate.quad(
+            fun, 0, 1, limit=500, maxp1=500, limlst=500, points=pts
+        )[0]
+
     return to_return / to_return.sum()
 
 
