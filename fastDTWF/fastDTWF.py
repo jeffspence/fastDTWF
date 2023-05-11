@@ -165,9 +165,9 @@ def wright_fisher_ps_mutate_first(
         pop_size: The number of individuals in the current (parental)
             generation
         mu_0_to_1: The probability that a "0" allele mutates to a "1" allele.
-            Represented as a torch.DoubleTensor of shape (1,)
+            Represented as a torch.DoubleTensor scalar
         mu_1_to_0: The probability that a "1" allele mutates to a "0" allele.
-            Represented as a torch.DoubleTensor of shape (1,)
+            Represented as a torch.DoubleTensor scalar
         s_het: The strength of selection acting against the "1" allele in
             heterozygotes. In particular, the fitness of homozygous "0"
             individuals is 1, the fitness of heterozygous individuals is
@@ -175,11 +175,11 @@ def wright_fisher_ps_mutate_first(
             If s_hom is not provided, defaults to 2*s_het (i.e., additivity)
             unless s_het > 0.5, in which case s_hom is 1 (so that fitness is
             always nonnegative). Can be set to negative values for positive
-            selection. Represented as a torch.DoubleTensor of shape (1,)
+            selection. Represented as a torch.DoubleTensor scalar
         s_hom: The strength of selection acting against individuals homozygous
             for the "1" allele. If not provided, defaults to an additive model
             with s_hom being min([2*s_het, 1]). Represented as a
-            torch.DoubleTensor of shape (1,)
+            torch.DoubleTensor scalar
     """
 
     # Make sure provided arguments are valid
@@ -376,7 +376,7 @@ def _torch_binom_pmf(
         kmax: The highest value (inclusive) of k at which to compute the PMF
         N: The Binomial N parameter
         p: The Binomial success probability parameter, p. Represented as a
-            torch.DoubleTensor of shape (1,).
+            torch.DoubleTensor scalar.
         bcoefs: A torch.DoubleTensor, where entry i is the log of N choose i.
 
     Returns:
@@ -1534,11 +1534,11 @@ def _integrate_likelihood_constant_size(
             If s_hom is not provided, defaults to 2*s_het (i.e., additivity)
             unless s_het > 0.5, in which case s_hom is 1 (so that fitness is
             always nonnegative). Can be set to negative values for positive
-            selection. Represented as a torch.DoubleTensor of shape (1,)
+            selection. Represented as a torch.DoubleTensor scalar
         mu_0_to_1: The probability that a "0" allele mutates to a "1" allele.
-            Represented as a torch.DoubleTensor of shape (1,)
+            Represented as a torch.DoubleTensor scalar
         mu_1_to_0: The probability that a "1" allele mutates to a "0" allele.
-            Represented as a torch.DoubleTensor of shape (1,)
+            Represented as a torch.DoubleTensor scalar
         dtwf_tv_sd: The number of standard deviations away that two success
             probabilities can be before being put in different index sets
         dtwf_row_eps: The amount of mass you are willing to neglect when
@@ -1552,7 +1552,7 @@ def _integrate_likelihood_constant_size(
         s_hom: The strength of selection acting against individuals homozygous
             for the "1" allele. If not provided, defaults to an additive model
             with s_hom being min([2*s_het, 1]). Represented as a
-            torch.DoubleTensor of shape (1,)
+            torch.DoubleTensor scalar
         use_condensed: Boolean representing whether or not to perform
             transitions in the "condensed" space. This can result in
             significant speedups but can result in greater errors over long
@@ -1764,11 +1764,11 @@ def get_likelihood(
             If s_hom is not provided, defaults to 2*s_het (i.e., additivity)
             unless s_het > 0.5, in which case s_hom is 1 (so that fitness is
             always nonnegative). Can be set to negative values for positive
-            selection. Represented as a torch.DoubleTensor of shape (1,)
+            selection. Represented as a torch.DoubleTensor scalar
         mu_0_to_1: The probability that a "0" allele mutates to a "1" allele.
-            Represented as a torch.DoubleTensor of shape (1,)
+            Represented as a torch.DoubleTensor scalar
         mu_1_to_0: The probability that a "1" allele mutates to a "0" allele.
-            Represented as a torch.DoubleTensor of shape (1,)
+            Represented as a torch.DoubleTensor scalar
         dtwf_tv_sd: The number of standard deviations away that two success
             probabilities can be before being put in different index sets for
             the DTWF transition matrix.
@@ -1790,7 +1790,7 @@ def get_likelihood(
         s_hom: The strength of selection acting against individuals homozygous
             for the "1" allele. If not provided, defaults to an additive model
             with s_hom being min([2*s_het, 1]). Represented as a
-            torch.DoubleTensor of shape (1,)
+            torch.DoubleTensor scalar
         use_condensed: Boolean representing whether or not to perform
             transitions in the "condensed" space. This can result in
             significant speedups but can result in greater errors over long

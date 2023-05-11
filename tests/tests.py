@@ -3,6 +3,7 @@ import scipy.stats
 import scipy.special
 import torch
 import numpy as np
+import warnings
 
 
 # TODO
@@ -99,19 +100,70 @@ def test_torch_hyp_pmf():
         assert np.allclose(true, check.detach().numpy())
 
 
-# TODO
 def test_numba_binom_pmf_single():
-    pass
+    assert fastDTWF._numba_binom_pmf_single(0, 55, 0) == 1.
+    assert fastDTWF._numba_binom_pmf_single(1, 55, 0) == 0.
+    assert fastDTWF._numba_binom_pmf_single(2, 55, 0) == 0.
+    assert fastDTWF._numba_binom_pmf_single(55, 55, 0) == 0.
+    assert fastDTWF._numba_binom_pmf_single(0, 55, 1) == 0.
+    assert fastDTWF._numba_binom_pmf_single(1, 55, 1) == 0.
+    assert fastDTWF._numba_binom_pmf_single(54, 55, 1) == 0.
+    assert fastDTWF._numba_binom_pmf_single(55, 55, 1) == 1.
+
+    for _ in range(100):
+        p = np.random.random()
+        N = np.random.randint(1, 1000)
+        k = np.random.randint(N)
+        # scipy.stats.binom.pmf throws a harmless division by zero runtime
+        # warning
+        with warnings.catch_warnings():
+            assert np.isclose(
+                fastDTWF._numba_binom_pmf_single(k, N, p),
+                scipy.stats.binom.pmf(k, N, p)
+            )
+            assert np.isclose(
+                fastDTWF._numba_binom_pmf_single(int(p*N), N, p),
+                scipy.stats.binom.pmf(int(p*N), N, p)
+            )
 
 
-# TODO
 def test_numba_binom_pmf():
-    pass
+    check = fastDTWF._numba_binom_pmf(3, 10, 100, 0.1)
+    true = scipy.stats.binom.pmf(range(3, 11), 100, 0.1)
+    assert np.allclose(true, check)
+
+    for _ in range(100):
+        N = np.random.randint(10, 1000)
+        p = np.random.random()
+        kmax = np.random.randint(1, N)
+        kmin = np.random.randint(kmax)
+        check = fastDTWF._numba_binom_pmf(kmin, kmax, N, p)
+        # scipy.stats.binom.pmf throws a harmless division by zero runtime
+        # warning
+        with warnings.catch_warnings():
+            true = scipy.stats.binom.pmf(range(kmin, kmax+1), N, p)
+        assert np.allclose(true, check)
 
 
-# TODO
 def test_torch_binom_pmf():
-    pass
+    for _ in range(100):
+        N = np.random.randint(10, 1000)
+        bcoefs = fastDTWF._make_binom_coefficients(N)
+        p = np.random.random()
+        kmax = np.random.randint(1, N)
+        kmin = np.random.randint(kmax)
+        check = fastDTWF._torch_binom_pmf(
+            kmin,
+            kmax,
+            N,
+            torch.tensor(p, dtype=torch.float64),
+            bcoefs
+        )
+        # scipy.stats.binom.pmf throws a harmless division by zero runtime
+        # warning
+        with warnings.catch_warnings():
+            true = scipy.stats.binom.pmf(range(kmin, kmax+1), N, p)
+        assert np.allclose(true, check.detach().numpy())
 
 
 # TODO
