@@ -178,6 +178,7 @@ def test_numba_binom_pmf_single():
         # scipy.stats.binom.pmf throws a harmless division by zero runtime
         # warning
         with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             assert np.isclose(
                 fastDTWF._numba_binom_pmf_single(k, N, p),
                 scipy.stats.binom.pmf(k, N, p)
@@ -202,6 +203,7 @@ def test_numba_binom_pmf():
         # scipy.stats.binom.pmf throws a harmless division by zero runtime
         # warning
         with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             true = scipy.stats.binom.pmf(range(kmin, kmax+1), N, p)
         assert np.allclose(true, check)
 
@@ -223,6 +225,7 @@ def test_torch_binom_pmf():
         # scipy.stats.binom.pmf throws a harmless division by zero runtime
         # warning
         with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
             true = scipy.stats.binom.pmf(range(kmin, kmax+1), N, p)
         assert np.allclose(true, check.detach().numpy())
 
@@ -361,6 +364,7 @@ def test_make_condensed_matrix():
     true_1_proj = fastDTWF.project_to_coarse(true_1, index_sets)
     assert torch.allclose(check[1:], true_1_proj[1:])
 
+    v_proj[0] = 0.
     true_2 = fastDTWF.mat_multiply_from_coarse(
         v_proj, trunc_p_list, 1000, 1e-8, False, True, 1.
     )
@@ -368,19 +372,69 @@ def test_make_condensed_matrix():
     assert torch.allclose(check[1:], true_2_proj[1:])
 
 
-# TODO
 def test_diffusion_stationary_strong_s():
-    pass
+    for s_het in [0.005, 0.01, 0.05, 0.1]:
+        check = fastDTWF.diffusion_stationary_strong_s(
+            1000,
+            torch.tensor(s_het, dtype=torch.float64),
+            torch.tensor(1e-10, dtype=torch.float64)
+        ).detach().numpy()[1:10]
+        check /= check.sum()
+        sfs = fastDTWF.diffusion_sfs(1000, s_het)[1:10]
+        sfs /= sfs.sum()
+        assert np.all(np.abs(sfs - check) / sfs <= 1e-2)
 
 
-# TODO
-def test_diffusion_sfs():
-    pass
-
-
-# TODO
 def test_diffusion_stationary():
-    pass
+    # Low mutation rate limit should roughly match SFS
+    for s_het in [0.000001, 0.00001, 0.0001, 0.001]:
+        check = fastDTWF.diffusion_stationary(
+            1000,
+            torch.tensor(s_het, dtype=torch.float64),
+            torch.tensor(1e-10, dtype=torch.float64),
+            torch.tensor(1e-10, dtype=torch.float64)
+        ).detach().numpy()[1:10]
+        check /= check.sum()
+        sfs = fastDTWF.diffusion_sfs(1000, s_het)[1:10]
+        sfs /= sfs.sum()
+        assert np.all(np.abs(sfs - check) / sfs <= 1e-2)
+
+    # Should just be beta binomial, can work out by hand
+    for _ in range(10):
+        alpha = np.random.random() * 1e-10
+        beta = np.random.random() * 1e-10
+        check = fastDTWF.diffusion_stationary(
+            1000,
+            torch.tensor(1e-30, dtype=torch.float64),
+            torch.tensor(alpha, dtype=torch.float64),
+            torch.tensor(beta, dtype=torch.float64),
+        ).detach().numpy()
+        assert np.isclose(check[0], 1./(1. + alpha/beta))
+        assert np.isclose(check[-1], 1./(beta/alpha + 1.))
+        interior = np.arange(1, 1000)
+        interior = 1000 / ((1000 - interior) * interior)
+        interior /= (1/(2*1000*alpha) + 1/(2*1000*beta))
+        assert np.allclose(check[1:-1], interior)
+
+
+def test_diffusion_sfs():
+    # Compare to analytical neutral result
+    check_neutral = fastDTWF.diffusion_sfs(100, 0)
+    check_nearly_neutral = fastDTWF.diffusion_sfs(100, 1e-30)
+    true = 1 / (1e-100 + np.arange(101))
+    true[0] = 0
+    true[-1] = 0
+    true /= true.sum()
+    assert np.allclose(check_neutral, true)
+    assert np.allclose(check_nearly_neutral, true)
+
+    # Make sure that selection shifts you to lower frequencies
+    curr_sfs = check_nearly_neutral
+    for s_het in 10**np.linspace(-10, -1, num=10):
+        new_sfs = fastDTWF.diffusion_sfs(100, s_het)
+        curr_cumsum = curr_sfs.cumsum()
+        assert np.all(curr_cumsum <= new_sfs.cumsum() + 1e-5*curr_cumsum)
+        curr_sfs = new_sfs
 
 
 def test_naive_multiply():
@@ -394,6 +448,7 @@ def test_naive_multiply():
                     vec, p_list, N, False, False, 0.0
                 )
                 with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
                     true = scipy.stats.binom.pmf(range(N+1), N, p_list[i])
                 assert np.allclose(check, true)
 
@@ -402,6 +457,7 @@ def test_naive_multiply():
                         vec, p_list, N, True, False, 0.0
                     )
                     with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
                         true = scipy.stats.binom.pmf(range(N+1), N, p_list[i])
                     true[-1] = 0
                     true /= true.sum()
@@ -412,6 +468,7 @@ def test_naive_multiply():
                         vec, p_list, N, False, True, 0.42
                     )
                     with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
                         true = scipy.stats.binom.pmf(range(N+1), N, p_list[i])
                     true[-1] = 0
                     true[0] = 0
@@ -609,24 +666,275 @@ def test_mat_multiply_from_coarse():
         assert np.abs(true - check.detach().numpy()).sum() < 1e-3
 
 
-# TODO
 def test_naive_equilibrium_solve():
-    pass
+    for _ in range(10):
+        mu_1 = np.random.random() * 1e-8
+        mu_2 = np.random.random() * 1e-8
+        s_het = np.random.random() * 1e-3
+        ps = fastDTWF.wright_fisher_ps_mutate_first(
+            1000,
+            torch.tensor(mu_1, dtype=torch.float64),
+            torch.tensor(mu_2, dtype=torch.float64),
+            torch.tensor(s_het, dtype=torch.float64)
+        ).detach().numpy()
+        eq_check = fastDTWF.naive_equilibrium_solve(
+            ps,
+            1000,
+            False,
+            False
+        )
+        next_gen = fastDTWF.naive_multiply(
+            eq_check,
+            ps,
+            1000,
+            False,
+            False,
+            0.
+        )
+        assert np.allclose(eq_check, next_gen)
+        eq_check = fastDTWF.naive_equilibrium_solve(
+            ps,
+            1000,
+            True,
+            False,
+            0.
+        )
+        next_gen = fastDTWF.naive_multiply(
+            eq_check,
+            ps,
+            1000,
+            True,
+            False,
+            0.
+        )
+        assert np.allclose(eq_check[1:], next_gen[1:])
+        eq_check = fastDTWF.naive_equilibrium_solve(
+            ps,
+            1000,
+            False,
+            True,
+            0.42
+        )
+        next_gen = fastDTWF.naive_multiply(
+            eq_check,
+            ps,
+            1000,
+            False,
+            True,
+            0.42
+        )
+        assert np.allclose(eq_check[1:], next_gen[1:])
 
 
-# TODO
 def test_equilibrium_solve():
-    pass
+    for _ in range(10):
+        mu_1 = np.random.random() * 1e-8
+        mu_2 = np.random.random() * 1e-8
+        s_het = np.random.random() * 1e-3
+        ps = fastDTWF.wright_fisher_ps_mutate_first(
+            1000,
+            torch.tensor(mu_1, dtype=torch.float64),
+            torch.tensor(mu_2, dtype=torch.float64),
+            torch.tensor(s_het, dtype=torch.float64)
+        )
+        index_sets = fastDTWF.coarse_grain(
+            ps, 1000, 0.1, False, False
+        )
+        eq_check = fastDTWF.equilibrium_solve(
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            False,
+            False
+        )
+        next_gen = fastDTWF.mat_multiply(
+            eq_check,
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            False,
+            False,
+            0.
+        )
+        assert np.allclose(eq_check, next_gen)
+
+        index_sets = fastDTWF.coarse_grain(
+            ps, 1000, 0.1, True, False
+        )
+        eq_check = fastDTWF.equilibrium_solve(
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            True,
+            False
+        )
+        next_gen = fastDTWF.mat_multiply(
+            eq_check,
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            True,
+            False,
+            0.
+        )
+        assert np.allclose(eq_check, next_gen)
+
+        index_sets = fastDTWF.coarse_grain(
+            ps, 1000, 0.1, False, True
+        )
+        eq_check = fastDTWF.equilibrium_solve(
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            False,
+            True,
+            0.42
+        )
+        next_gen = fastDTWF.mat_multiply(
+            eq_check,
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            False,
+            True,
+            0.42
+        )
+        assert np.allclose(eq_check, next_gen)
 
 
-# TODO
 def test_pick_eigenvec():
-    pass
+    for _ in range(10):
+        t_mat = np.random.random((100, 100))
+        t_mat /= t_mat.sum(axis=1, keepdims=True)
+        t_mat = torch.tensor(t_mat, dtype=torch.float64)
+        eigvals, eigvecs = torch.linalg.eig(t_mat.T)
+        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs)
+        true_idx = torch.argmax(eigvals.real)
+        eigvec_true = torch.abs(eigvecs[:, true_idx])
+        assert torch.allclose(eigvec_check, eigvec_true)
+
+        # should be fine under arbitrary complex rotations
+        eigvecs_i = eigvecs * torch.complex(
+            torch.tensor(0, dtype=torch.float64),
+            torch.tensor(1, dtype=torch.float64)
+        )
+        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_i)
+        assert torch.allclose(eigvec_check, eigvec_true)
+
+        eigvecs_neg = -1 * eigvecs
+        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_neg)
+        assert torch.allclose(eigvec_check, eigvec_true)
+
+        eigvecs_mi = -eigvecs_i
+        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_mi)
+        assert torch.allclose(eigvec_check, eigvec_true)
+
+        eigvecs_comp = eigvecs * torch.complex(
+            torch.tensor(np.sqrt(1/2), dtype=torch.float64),
+            torch.tensor(np.sqrt(1/2), dtype=torch.float64)
+        )
+        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_comp)
+        assert torch.allclose(eigvec_check, eigvec_true)
 
 
-# TODO
 def test_one_step_solve():
-    pass
+    for _ in range(10):
+        mu_1 = np.random.random() * 1e-8
+        mu_2 = np.random.random() * 1e-8
+        s_het = np.random.random() * 1e-3
+        ps = fastDTWF.wright_fisher_ps_mutate_first(
+            1000,
+            torch.tensor(mu_1, dtype=torch.float64),
+            torch.tensor(mu_2, dtype=torch.float64),
+            torch.tensor(s_het, dtype=torch.float64)
+        )
+        index_sets = fastDTWF.coarse_grain(
+            ps, 1000, 0.1, False, False
+        )
+        vec = torch.tensor(np.random.random(1001), dtype=torch.float64)
+        vec /= vec.sum()
+        trunc_ps = fastDTWF.project_to_coarse(ps, index_sets, vec)
+        eq_check = fastDTWF._one_step_solve(
+            index_sets,
+            trunc_ps,
+            1000,
+            1e-8,
+            False,
+            False,
+        )
+        proj_eq = fastDTWF.project_to_coarse(eq_check, index_sets)
+        eq_next = fastDTWF.mat_multiply_from_coarse(
+            proj_eq,
+            trunc_ps,
+            1000,
+            1e-8,
+            False,
+            False,
+            0.
+        )
+        assert torch.allclose(eq_check, eq_next)
+
+        index_sets = fastDTWF.coarse_grain(
+            ps, 1000, 0.1, True, False
+        )
+        vec = torch.tensor(np.random.random(1001), dtype=torch.float64)
+        vec[-1] = 0.
+        vec /= vec.sum()
+        trunc_ps = fastDTWF.project_to_coarse(ps, index_sets, vec)
+        eq_check = fastDTWF._one_step_solve(
+            index_sets,
+            trunc_ps,
+            1000,
+            1e-8,
+            True,
+            False,
+        )
+        proj_eq = fastDTWF.project_to_coarse(eq_check, index_sets)
+        eq_next = fastDTWF.mat_multiply_from_coarse(
+            proj_eq,
+            trunc_ps,
+            1000,
+            1e-8,
+            True,
+            False,
+            0.
+        )
+        assert torch.allclose(eq_check, eq_next)
+
+        index_sets = fastDTWF.coarse_grain(
+            ps, 1000, 0.1, False, True
+        )
+        vec = torch.tensor(np.random.random(1001), dtype=torch.float64)
+        vec[0] = 0.
+        vec[-1] = 0.
+        vec /= vec.sum()
+        trunc_ps = fastDTWF.project_to_coarse(ps, index_sets, vec)
+        eq_check = fastDTWF._one_step_solve(
+            index_sets,
+            trunc_ps,
+            1000,
+            1e-8,
+            False,
+            True,
+            0.42
+        )
+        proj_eq = fastDTWF.project_to_coarse(eq_check, index_sets)
+        eq_next = fastDTWF.mat_multiply_from_coarse(
+            proj_eq,
+            trunc_ps,
+            1000,
+            1e-8,
+            False,
+            True,
+            0.42
+        )
+        assert torch.allclose(eq_check, eq_next)
 
 
 def test_mat_multiply():
@@ -781,4 +1089,131 @@ def test_integrate_likelihood_constant_size():
 
 # TODO
 def test_get_likelihood():
-    pass
+    s_het = torch.tensor(1e-3, dtype=torch.float64)
+    mu_0_to_1 = torch.tensor(1e-4, dtype=torch.float64)
+    mu_1_to_0 = torch.tensor(2.3e-4, dtype=torch.float64)
+
+    for no_fix, sfs in [(False, False), (True, False), (False, True)]:
+        for use_condensed in [False, True]:
+            if use_condensed:
+                refresh = [5, 10, 50, float('inf')]
+            else:
+                refresh = [float('inf')]
+            for refresh_gens in refresh:
+                if sfs:
+                    injection_rate = 0.42
+                else:
+                    injection_rate = 0.
+                # check that continuing on is close to equilibrium
+                check = fastDTWF.get_likelihood(
+                    pop_size_list=[100, 100],
+                    switch_points=[50, 0],
+                    sample_size=100,
+                    s_het=s_het,
+                    mu_0_to_1=mu_0_to_1,
+                    mu_1_to_0=mu_1_to_0,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                ps = fastDTWF.wright_fisher_ps_mutate_first(
+                    100,
+                    mu_0_to_1,
+                    mu_1_to_0,
+                    s_het,
+                    None
+                )
+                index_sets = fastDTWF.coarse_grain(
+                    ps,
+                    100,
+                    0.1,
+                    no_fix,
+                    sfs
+                )
+                true = fastDTWF.equilibrium_solve(
+                    index_sets,
+                    ps,
+                    100,
+                    1e-8,
+                    no_fix,
+                    sfs,
+                    injection_rate
+                )
+                assert torch.allclose(check, true)
+
+                # check that the downsampling is okay
+                check = fastDTWF.get_likelihood(
+                    pop_size_list=[100, 100],
+                    switch_points=[50, 0],
+                    sample_size=10,
+                    s_het=s_het,
+                    mu_0_to_1=mu_0_to_1,
+                    mu_1_to_0=mu_1_to_0,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                true_down = fastDTWF.hypergeometric_sample(
+                    true, 10, 0.05, 1e-8, sfs
+                )
+                assert torch.allclose(check, true_down)
+
+                # check that running for a long time brings you close to
+                # another equilibrium
+                time_needed = 200 if (sfs or no_fix) else 1000
+                check = fastDTWF.get_likelihood(
+                    pop_size_list=[20, 10],
+                    switch_points=[time_needed, 0],
+                    sample_size=10,
+                    s_het=s_het,
+                    mu_0_to_1=mu_0_to_1,
+                    mu_1_to_0=mu_1_to_0,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                ps = fastDTWF.wright_fisher_ps_mutate_first(
+                    10,
+                    mu_0_to_1,
+                    mu_1_to_0,
+                    s_het,
+                    None
+                )
+                index_sets = fastDTWF.coarse_grain(
+                    ps,
+                    10,
+                    0.1,
+                    no_fix,
+                    sfs
+                )
+                true = fastDTWF.equilibrium_solve(
+                    index_sets,
+                    ps,
+                    10,
+                    1e-8,
+                    no_fix,
+                    sfs,
+                    injection_rate
+                )
+                assert torch.allclose(check, true, rtol=1e-2)
