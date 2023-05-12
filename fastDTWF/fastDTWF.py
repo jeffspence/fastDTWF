@@ -1643,6 +1643,8 @@ def _integrate_likelihood_constant_size(
             curr_b_coefs
         )
         condensed_prob_vec = project_to_coarse(vec, index_sets)
+        if sfs:
+            condensed_prob_vec[index_sets[0]] = 1.
         staleness = 0
 
     while num_gens_left > 0:
@@ -1651,6 +1653,8 @@ def _integrate_likelihood_constant_size(
             # condensed matrix, then we will need to project from the
             # coarse-grained probabilities to the actual probabilities
             if num_gens_left == 1 or staleness >= refresh_gens:
+                if sfs:
+                    condensed_prob_vec[index_sets[0]] = 0.
                 vec = mat_multiply_from_coarse(
                     condensed_prob_vec,
                     trunc_p_list,
@@ -1669,6 +1673,8 @@ def _integrate_likelihood_constant_size(
                     staleness = 0
                     condensed_prob_vec = project_to_coarse(vec,
                                                            index_sets)
+                    if sfs:
+                        condensed_prob_vec[index_sets[0]] = 1.
                     trunc_p_list = project_to_coarse(curr_ps,
                                                      index_sets,
                                                      vec)
