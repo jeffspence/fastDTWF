@@ -1082,12 +1082,71 @@ def test_mat_multiply():
         assert np.abs(true - check.detach().numpy()).sum() < 1e-3
 
 
-# TODO
 def test_integrate_likelihood_constant_size():
-    pass
+    for _ in range(10):
+        v = torch.tensor(np.random.random(101), dtype=torch.float64)
+        v /= v.sum()
+
+        s_het = torch.tensor(np.random.random()*1e-2, dtype=torch.float64)
+        mu_0_to_1 = torch.tensor(np.random.random()*1e-3, dtype=torch.float64)
+        mu_1_to_0 = torch.tensor(np.random.random()*1e-3, dtype=torch.float64)
+
+        for no_fix, sfs in [(False, False), (True, False), (False, True)]:
+            for use_condensed in [False, True]:
+                if use_condensed:
+                    refresh = [5, 10, 50, float('inf')]
+                else:
+                    refresh = [float('inf')]
+                for refresh_gens in refresh:
+                    if sfs:
+                        injection_rate = 0.42
+                    else:
+                        injection_rate = 0.
+
+                    check = fastDTWF._integrate_likelihood_constant_size(
+                        vec=v,
+                        interval_pop_size=100,
+                        interval_length=50,
+                        s_het=s_het,
+                        mu_0_to_1=mu_0_to_1,
+                        mu_1_to_0=mu_1_to_0,
+                        dtwf_tv_sd=0.1,
+                        dtwf_row_eps=1e-8,
+                        no_fix=no_fix,
+                        sfs=sfs,
+                        injection_rate=injection_rate,
+                        s_hom=None,
+                        use_condensed=use_condensed,
+                        refresh_gens=refresh_gens
+                    )
+                    true = v.detach().clone()
+                    ps = fastDTWF.wright_fisher_ps_mutate_first(
+                        100,
+                        mu_0_to_1,
+                        mu_1_to_0,
+                        s_het
+                    )
+                    index_sets = fastDTWF.coarse_grain(
+                        ps,
+                        100,
+                        0.1,
+                        no_fix,
+                        sfs
+                    )
+                    for i in range(50):
+                        true = fastDTWF.mat_multiply(
+                            true,
+                            index_sets,
+                            ps,
+                            100,
+                            1e-8,
+                            no_fix,
+                            sfs,
+                            injection_rate
+                        )
+                    assert torch.allclose(true, check)
 
 
-# TODO
 def test_get_likelihood():
     s_het = torch.tensor(1e-3, dtype=torch.float64)
     mu_0_to_1 = torch.tensor(1e-4, dtype=torch.float64)
