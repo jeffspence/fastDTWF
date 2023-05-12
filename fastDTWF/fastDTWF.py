@@ -762,18 +762,21 @@ def diffusion_stationary_strong_s(
     to_return = torch.exp(
         k_tensor * np.log(pop_size)
         - torch.lgamma(k_tensor + 1)
-        + 2 * pop_size * mu_0_to_1 * torch.log(2 * pop_size * s_het)
+        + 2 * pop_size * mu_0_to_1 * torch.log(pop_size * s_het)
         - torch.lgamma(2 * pop_size * mu_0_to_1)
         + torch.lgamma(2 * pop_size * mu_0_to_1 + k_tensor)
         - ((2 * pop_size * mu_0_to_1 + k_tensor)
-           * torch.log(2 * pop_size * s_het + pop_size))
+           * torch.log(pop_size * s_het + pop_size))
     )
 
     return to_return / to_return.sum()
 
 
 def diffusion_stationary(
-    pop_size: int, s_het: float, mu_0_to_1: float, mu_1_to_0: float
+    pop_size: int,
+    s_het: torch.DoubleTensor,
+    mu_0_to_1: torch.DoubleTensor,
+    mu_1_to_0: torch.DoubleTensor
 ) -> torch.DoubleTensor:
     """
     Compute the stationary distribution of the WF diffusion
@@ -808,20 +811,20 @@ def diffusion_stationary(
 
     # If s_het is sufficiently strong, this approximation becomes numerically
     # unstable, but we can use the other approximation instead
-    if pop_size * s_het > 10:
+    if pop_size * s_het > 2:
         return diffusion_stationary_strong_s(pop_size, s_het, mu_0_to_1)
 
     # Determine how many terms we need to include before encountering
     # negligible error
     m_max = 1
     error = (
-        m_max * torch.log(2 * pop_size * s_het)
+        m_max * torch.log(pop_size * s_het)
         - scipy.special.gammaln(m_max + 1)
     )
     while error > np.log(1e-10):
         m_max += 1
         error = (
-            m_max * torch.log(2 * pop_size * s_het)
+            m_max * torch.log(pop_size * s_het)
             - scipy.special.gammaln(m_max + 1)
         )
     m_max += 1
@@ -833,7 +836,7 @@ def diffusion_stationary(
     normalizer = sum(
         [
             torch.exp(
-                p * torch.log(2 * pop_size * s_het)
+                p * torch.log(pop_size * s_het)
                 - scipy.special.gammaln(p + 1)
                 + torch.lgamma(2 * pop_size * mu_0_to_1 + p)
                 + torch.lgamma(2 * pop_size * mu_1_to_0)
@@ -865,7 +868,7 @@ def diffusion_stationary(
                         + p
                     )
                     - scipy.special.gammaln(p + 1)
-                    + p * torch.log(2 * pop_size * s_het)
+                    + p * torch.log(pop_size * s_het)
                 )
                 * (-1) ** p
                 for p in range(m_max + 1)
@@ -873,10 +876,8 @@ def diffusion_stationary(
         )
 
     # The above is a bit numerically unstable, and so some entries might be
-    # slightly negative.  This assigns a tiny amount of mass to those entries
-    to_return = torch.maximum(
-        to_return, torch.abs(1 - to_return.sum()) / pop_size
-    )
+    # slightly negative.
+    to_return[to_return < 0.] = 0.
 
     # Normalize the result to make sure its a real mass function
     return to_return / to_return.sum()
