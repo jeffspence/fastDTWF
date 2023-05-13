@@ -1276,3 +1276,126 @@ def test_get_likelihood():
                     injection_rate
                 )
                 assert torch.allclose(check, true, rtol=1e-2)
+
+
+def check_differentiable():
+    for no_fix, sfs in [(False, False), (True, False), (False, True)]:
+        injection_rate = 0.42 if sfs else 0.
+        for use_condensed in [False, True]:
+            if use_condensed:
+                refresh = [5, 10, 50, float('inf')]
+            else:
+                refresh = [float('inf')]
+            for refresh_gens in refresh:
+                s_het = torch.tensor(
+                    1e-3, dtype=torch.float64, requires_grad=True
+                )
+                mu_0_to_1 = torch.tensor(
+                    1e-4, dtype=torch.float64, requires_grad=True
+                )
+                mu_1_to_0 = torch.tensor(
+                    2.3e-4, dtype=torch.float64, requires_grad=True
+                )
+                check = fastDTWF.get_likelihood(
+                    pop_size_list=[100, 100],
+                    switch_points=[50, 0],
+                    sample_size=10,
+                    s_het=s_het,
+                    mu_0_to_1=mu_0_to_1,
+                    mu_1_to_0=mu_1_to_0,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                val = check[1]
+                val.backward()
+                s_het_grad = s_het.grad
+                mu_0_to_1_grad = mu_0_to_1.grad
+                mu_1_to_0_grad = mu_1_to_0.grad
+
+                # compare to numerical gradients
+                s_het_eps = torch.tensor(
+                    1e-3 + 1e-6, dtype=torch.float64
+                )
+                check_s_eps = fastDTWF.get_likelihood(
+                    pop_size_list=[100, 100],
+                    switch_points=[50, 0],
+                    sample_size=10,
+                    s_het=s_het_eps,
+                    mu_0_to_1=mu_0_to_1,
+                    mu_1_to_0=mu_1_to_0,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                assert torch.isclose(
+                    s_het_grad, (check_s_eps[1] - val) / 1e-6, rtol=1e-4
+                )
+
+                mu_0_to_1_eps = torch.tensor(
+                    1e-4 + 1e-8, dtype=torch.float64
+                )
+                check_mu_0_to_1_eps = fastDTWF.get_likelihood(
+                    pop_size_list=[100, 100],
+                    switch_points=[50, 0],
+                    sample_size=10,
+                    s_het=s_het,
+                    mu_0_to_1=mu_0_to_1_eps,
+                    mu_1_to_0=mu_1_to_0,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                assert torch.isclose(
+                    mu_0_to_1_grad,
+                    (check_mu_0_to_1_eps[1] - val) / 1e-8,
+                    rtol=1e-4
+                )
+
+                mu_1_to_0_eps = torch.tensor(
+                    2.3e-4 + 1e-8, dtype=torch.float64
+                )
+                check_mu_1_to_0_eps = fastDTWF.get_likelihood(
+                    pop_size_list=[100, 100],
+                    switch_points=[50, 0],
+                    sample_size=10,
+                    s_het=s_het,
+                    mu_0_to_1=mu_0_to_1,
+                    mu_1_to_0=mu_1_to_0_eps,
+                    dtwf_tv_sd=0.1,
+                    dtwf_row_eps=1e-8,
+                    sampling_tv_sd=0.05,
+                    sampling_row_eps=1e-8,
+                    no_fix=no_fix,
+                    sfs=sfs,
+                    injection_rate=injection_rate,
+                    s_hom=None,
+                    use_condensed=use_condensed,
+                    refresh_gens=refresh_gens
+                )
+                assert torch.isclose(
+                    mu_1_to_0_grad,
+                    (check_mu_1_to_0_eps[1] - val) / 1e-8,
+                    rtol=1e-4
+                )
