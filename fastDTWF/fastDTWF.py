@@ -196,16 +196,16 @@ def wright_fisher_ps_mutate_first(
     ) / pop_size
 
     # Frequencies after mutations occur
-    ps = (
+    mut_freqs = (
         parental_allele_freqs * (1 - mu_1_to_0)
         + (1 - parental_allele_freqs) * mu_0_to_1
     )
 
     # Pair gametes according to Hardy Weinberg, and then multiply them by their
     # relative fitnesses
-    living_00 = (1 - ps) ** 2
-    living_01 = 2 * ps * (1 - ps) * (1 - s_het)
-    living_11 = ps**2 * (1 - s_hom)
+    living_00 = (1 - mut_freqs) ** 2
+    living_01 = 2 * mut_freqs * (1 - mut_freqs) * (1 - s_het)
+    living_11 = mut_freqs**2 * (1 - s_hom)
 
     # Calculate how big the total pool is after selection
     total_living = living_00 + living_01 + living_11
@@ -299,15 +299,11 @@ def _torch_hyp_pmf(
 
     # Only compute the Hypergeometric PMF for values where it is valid
     kmin_real = int(kmin)
-    if 0 > kmin_real:
-        kmin_real = 0
-    if n + K - N > kmin_real:
-        kmin_real = int(n + K - N)
+    kmin_real = max(kmin_real, 0)
+    kmin_real = max(int(n + K - N), kmin_real)
     kmax_real = int(kmax)
-    if n < kmax_real:
-        kmax_real = int(n)
-    if K < kmax_real:
-        kmax_real = int(K)
+    kmax_real = min(kmax_real, n)
+    kmax_real = min(kmax_real, K)
 
     # If there are no valid values, return 0 tensor
     if kmin_real > kmax_real:
@@ -477,7 +473,7 @@ def project_to_coarse(
 
 def hypergeometric_sample(
     vec: torch.DoubleTensor,
-    n: int,
+    sample_size: int,
     tv_sd: float,
     row_eps: float,
     sfs: bool = False
@@ -501,25 +497,25 @@ def hypergeometric_sample(
         probabilities
     """
 
-    N = len(vec) - 1
+    pop_size = len(vec) - 1
 
     # "success probabilities" are just K/N for Hypergeometric
-    p_vec = torch.arange(N + 1, dtype=torch.float64) / N
+    p_vec = torch.arange(pop_size + 1, dtype=torch.float64) / pop_size
 
     # Coarse grain and project the success probabilities and population
     # probabilities to the coarse grained space
-    index_sets = coarse_grain(p_vec, n, tv_sd, False, False)
-    trunc_K_vec = N * project_to_coarse(p_vec, index_sets, vec)
+    index_sets = coarse_grain(p_vec, sample_size, tv_sd, False, False)
+    trunc_K_vec = pop_size * project_to_coarse(p_vec, index_sets, vec)
     trunc_mass = project_to_coarse(vec, index_sets)
 
     # How many k must we include on either side of the mean to capture at least
     # 1 - row_eps mass (Hoeffding)
-    sd_val = math.sqrt(-n * np.log(row_eps) / 2)
+    sd_val = math.sqrt(-sample_size * np.log(row_eps) / 2)
 
-    to_return = torch.zeros(n + 1, dtype=torch.float64)
+    to_return = torch.zeros(sample_size + 1, dtype=torch.float64)
 
     # Precompute log factorials
-    lfacts = torch.lgamma(torch.arange(N + 1, dtype=torch.float64) + 1)
+    lfacts = torch.lgamma(torch.arange(pop_size + 1, dtype=torch.float64) + 1)
 
     for i in range(len(trunc_mass)):
         # if the success probability is not equal to K/N for some K, then the
@@ -529,22 +525,22 @@ def hypergeometric_sample(
         Klow = int(raw_K)
         Khigh = Klow + 1
         plow = Khigh - raw_K
-        if Khigh > N:
+        if Khigh > pop_size:
             Khigh = Klow
             plow = 1.0
 
         # get the range of k we need to consider
-        mean_val = n * raw_K / N
+        mean_val = sample_size * raw_K / pop_size
         kmin = int(mean_val - sd_val)
         kmax = int(mean_val + sd_val) + 1
-        if kmin < 0:
-            kmin = 0
-        if kmax > n:
-            kmax = n
+        kmin = max(kmin, 0)
+        kmax = min(kmax, sample_size)
 
-        to_add = plow * _torch_hyp_pmf(kmin, kmax, N, Klow, n, lfacts)
+        to_add = plow * _torch_hyp_pmf(
+            kmin, kmax, pop_size, Klow, sample_size, lfacts
+        )
         to_add = to_add + (1 - plow) * _torch_hyp_pmf(
-            kmin, kmax, N, Khigh, n, lfacts
+            kmin, kmax, pop_size, Khigh, sample_size, lfacts
         )
 
         # Condition on landing in the range of k we consider, to make sure it's
@@ -564,7 +560,7 @@ def hypergeometric_sample(
 
 @njit("float64[:](float64[:], int64)")
 def naive_hypergeometric_sample(
-    vec: npt.NDArray[np.float64], n: int
+    vec: npt.NDArray[np.float64], sample_size: int
 ) -> npt.NDArray[np.float64]:
     """
     "Exact" computation of hypergeometric projection
@@ -576,9 +572,11 @@ def naive_hypergeometric_sample(
     Returns:
         A numpy ndarray of shape (n+1,) containing the sample probabilities
     """
-    to_return = np.zeros(n + 1, dtype=np.float64)
+    to_return = np.zeros(sample_size + 1, dtype=np.float64)
     for K in range(len(vec)):
-        to_return += _numba_hyp_pmf(0, n, len(vec) - 1, K, n) * vec[K]
+        to_return += vec[K] * _numba_hyp_pmf(
+            0, sample_size, len(vec) - 1, K, sample_size
+        )
     return to_return
 
 
@@ -638,12 +636,11 @@ def make_condensed_matrix(
         bcoefs = _make_binom_coefficients(pop_size)
 
     # Create transition mass function for each condensed row
-    for i in range(len(trunc_p_list)):
-        p = trunc_p_list[i]
+    for i, prob in enumerate(trunc_p_list):
 
         # Find out how far away from the mean we need to consider to keep 1 -
         # row_eps mass
-        mean_val = torch.round(pop_size * p)
+        mean_val = torch.round(pop_size * prob)
         sd_val = np.sqrt(-pop_size * np.log(row_eps) / 2)
         kmin = int(mean_val - sd_val)
         if kmin < 0:
@@ -657,7 +654,7 @@ def make_condensed_matrix(
                 kmax = pop_size - 1
 
         # Get out the corresponding entries of the binomial PMF
-        pmf = _torch_binom_pmf(kmin, kmax, pop_size, p, bcoefs)
+        pmf = _torch_binom_pmf(kmin, kmax, pop_size, prob, bcoefs)
 
         # Normalize rows
         # If conditoning on non-fixation, then things should lose mass
@@ -669,16 +666,16 @@ def make_condensed_matrix(
         if sfs:
             normalizer = (
                 normalizer
-                - _torch_binom_pmf(0, 0, pop_size, p, bcoefs)
+                - _torch_binom_pmf(0, 0, pop_size, prob, bcoefs)
             )
             normalizer = (
                 normalizer
-                - _torch_binom_pmf(pop_size, pop_size, pop_size, p, bcoefs)
+                - _torch_binom_pmf(pop_size, pop_size, pop_size, prob, bcoefs)
             )
         elif no_fix:
             normalizer = (
                 normalizer
-                - _torch_binom_pmf(pop_size, pop_size, pop_size, p, bcoefs)
+                - _torch_binom_pmf(pop_size, pop_size, pop_size, prob, bcoefs)
             )
         if den <= row_eps:
             assert normalizer <= row_eps
@@ -919,14 +916,16 @@ def diffusion_sfs(pop_size: int, s_het: float) -> npt.NDArray[np.float64]:
     for k in range(1, pop_size):
 
         # Define the analytical result for the continous function
-        def fun(x):
+        def fun(freq):
+            # pylint: disable=cell-var-from-loop
             first_bit = np.exp(
                 math.lgamma(pop_size + 1)
                 - math.lgamma(pop_size - k + 1)
                 - math.lgamma(k + 1)
-                + (k - 1) * np.log(x)
-                + (pop_size - k - 1) * np.log(1 - x)
+                + (k - 1) * np.log(freq)
+                + (pop_size - k - 1) * np.log(1 - freq)
             )
+            # pylint: enable=cell-var-from-loop
 
             # If scaled_s_het > 500 we start running into overflow issues
             # as we are compute exp(scaled_s_het * (1-x)) - 1 in the numerator
@@ -936,10 +935,10 @@ def diffusion_sfs(pop_size: int, s_het: float) -> npt.NDArray[np.float64]:
             # equal to just exp, and then we can analytically cancel out the
             # numerator and denominator, resulting in just exp(-scaled_s_het*x)
             if scaled_s_het < 500:
-                second_bit = np.expm1(scaled_s_het * (1 - x))
+                second_bit = np.expm1(scaled_s_het * (1 - freq))
                 third_bit = np.expm1(scaled_s_het)
             else:
-                second_bit = np.exp(-scaled_s_het * x)
+                second_bit = np.exp(-scaled_s_het * freq)
                 third_bit = 1.0
             return first_bit * second_bit / third_bit
 
@@ -1005,8 +1004,8 @@ def naive_multiply(
     # corresponding success probability
     to_return = np.zeros_like(vec)
     for i in range(len(to_return)):
-        p = p_list[i]
-        binom = _numba_binom_pmf(0, pop_size, pop_size, p)
+        prob = p_list[i]
+        binom = _numba_binom_pmf(0, pop_size, pop_size, prob)
         to_return += binom * vec[i]
 
     # If computing the SFS, remove any mutations that became fixed or lost and
@@ -1093,21 +1092,18 @@ def mat_multiply_from_coarse(
         bcoefs = _make_binom_coefficients(pop_size)
 
     # Transition each row
-    for i in range(len(trunc_mass)):
+    for i, prob in enumerate(trunc_p_list):
 
         # Find out which entries we need to consider
-        p = trunc_p_list[i]
-        mean_val = pop_size * p
+        mean_val = pop_size * prob
         kmin = int(mean_val - sd_val)
-        if kmin < 0:
-            kmin = 0
+        kmin = max(kmin, 0)
         kmax = int(mean_val + sd_val) + 1
-        if kmax > pop_size:
-            kmax = pop_size
+        kmax = min(kmax, pop_size)
 
         # Compute the PMF for those entries, and then normalize to conditon on
         # landing within this set of values
-        pmf = _torch_binom_pmf(kmin, kmax, pop_size, p, bcoefs)
+        pmf = _torch_binom_pmf(kmin, kmax, pop_size, prob, bcoefs)
         to_return[kmin : (kmax + 1)] += pmf * trunc_mass[i] / pmf.sum()
 
     # If computing the SFS, we want to ignore mutations that have been fixed or
@@ -1127,7 +1123,7 @@ def mat_multiply_from_coarse(
 
 
 def naive_equilibrium_solve(
-    ps: npt.NDArray[np.float64],
+    p_list: npt.NDArray[np.float64],
     pop_size: int,
     no_fix: bool,
     sfs: bool = False,
@@ -1163,14 +1159,14 @@ def naive_equilibrium_solve(
     """
 
     # Make sure provided arguments are valid
-    assert np.all(ps >= 0)
-    assert np.all(ps <= 1)
-    assert np.all(np.diff(ps) >= 0)
+    assert np.all(p_list >= 0)
+    assert np.all(p_list <= 1)
+    assert np.all(np.diff(p_list) >= 0)
 
     # Construct the transition matrix
     matrix = np.zeros((pop_size + 1, pop_size + 2))
-    for idx, p in enumerate(ps):
-        matrix[idx, :-1] = _numba_binom_pmf(0, pop_size, pop_size, p)
+    for idx, prob in enumerate(p_list):
+        matrix[idx, :-1] = _numba_binom_pmf(0, pop_size, pop_size, prob)
 
     # In the case of the SFS we want to ignore all lost mutations, and then we
     # want an injection of singletons at each generation. This can be
@@ -1847,12 +1843,12 @@ def get_likelihood(
 
     # Evolve the population distributions through the intervals up to the end
     # of the last one
-    for interval_N, negative_interval_length in zip(
+    for interval_pop_size, negative_interval_length in zip(
         pop_size_list[1:], np.diff(switch_points)
     ):
         vec = _integrate_likelihood_constant_size(
             vec,
-            interval_N,
+            interval_pop_size,
             -negative_interval_length,
             s_het,
             mu_0_to_1,
