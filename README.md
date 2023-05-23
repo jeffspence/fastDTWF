@@ -35,7 +35,7 @@ mu = torch.tensor(1e-8, dtype=torch.float64)
 # allele frequencies in a population of size
 # 100
 freq_probs = fastDTWF.get_likelihood(
-    pop_size_list=[100],    # population size of 10000
+    pop_size_list=[100],    # population size of 100
     switch_points=[0],        # sample individuals at present
     sample_size=100,        # sample the whole population
     s_het=s_het,
