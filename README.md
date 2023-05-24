@@ -80,7 +80,7 @@ sample_probs[1]
 # Alternatively, one can directly downsample the population likelihoods:
 sample_probs_direct = fastDTWF.hypergeometric_sample(
     vec=freq_probs,
-    n=10,
+    sample_size=10,
     tv_sd=0.05,
     row_eps=1e-8,
     sfs=False
