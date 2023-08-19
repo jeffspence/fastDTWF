@@ -135,7 +135,7 @@ def coarse_grain(
     # they are sorted
     assert torch.all(p_list >= 0)
     assert torch.all(p_list <= 1)
-    assert torch.all(torch.diff(p_list) >= 1e-16)
+    assert torch.all(torch.diff(p_list) >= -1e-16)
 
     return torch.LongTensor(
         _coarse_grain(p_list.detach().numpy(), pop_size, tv_sd, no_fix, sfs)
