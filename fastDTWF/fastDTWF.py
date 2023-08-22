@@ -1166,7 +1166,12 @@ def naive_equilibrium_solve(
     # Make sure provided arguments are valid
     assert np.all(p_list >= 0)
     assert np.all(p_list <= 1)
-    assert np.all(np.diff(p_list) >= 0)
+    if sfs:
+        assert np.all(np.diff(p_list[1:-1]) >= -1e-16)
+    elif no_fix:
+        assert np.all(np.diff(p_list[:-1]) >= -1e-16)
+    else:
+        assert np.all(np.diff(p_list) >= -1e-16)
 
     # Construct the transition matrix
     matrix = np.zeros((pop_size + 1, pop_size + 2))
