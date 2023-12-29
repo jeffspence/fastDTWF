@@ -147,6 +147,86 @@ def coarse_grain(
     )
 
 
+def wright_fisher_ps_mutate_first_x_chr(
+    num_haps: int,
+    mu_0_to_1: torch.DoubleTensor,
+    mu_1_to_0: torch.DoubleTensor,
+    s_het: torch.DoubleTensor,
+    s_hom: torch.DoubleTensor,
+    s_hemi: torch.DoubleTensor
+) -> torch.DoubleTensor:
+    """
+    Compute expected allele frequences on the X chromosome for DTWF models
+
+    We use an approximation where we assume that all mutation and selection
+    happens in an infinitely large pool at hardy weinberg equilibrium and then
+    chromosomes are pulled from this pool to form the next generation. In
+    particular, all mutation and selection happens durung gamete formation, and
+    so, for example, selection happens in the males of the previous generation.
+    The ordering of these events matters slightly, and this is a particular
+    choice.
+
+    Args:
+        num_haps: The number of haploids in the current (parental) generation.
+            Note that this should be 3/4 of the actual population size since
+            males only carry one X chromosome.
+        mu_0_to_1: The probability that a "0" allele mutates to a "1" allele.
+            Represented as a torch.DoubleTensor scalar
+        mu_1_to_0: The probability that a "1" allele mutates to a "0" allele.
+            Represented as a torch.DoubleTensor scalar
+        s_het: The strength of selection acting against the "1" allele in
+            heterozygous females. In particular, the fitness of homozygous "0"
+            individuals is 1, the fitness of heterozygous females is
+            1-s_het, and the fitness of homozygous "1" females is 1-s_hom.
+            Can be set to negative values for positive
+            selection. Represented as a torch.DoubleTensor scalar
+        s_hom: The strength of selection acting against females homozygous
+            for the "1" allele. Represented as a torch.DoubleTensor scalar.
+        s_hemi: The strength of selection acting against males with the "1"
+            allele.  Represented as a torch.DoubleTensor scalar.
+
+    Returns:
+        A torch.DoubleTensor containing the expected frequencies in the next
+        generation given a current frequency. In partciular given a current
+        frequncy of i/num_haps, the ith entry of the result will contain the
+        expected frequency in the next generation.
+    """
+    assert num_haps == int(num_haps)
+
+    hap_freqs = torch.arange(
+        num_haps + 1, dtype=torch.float64
+    ) / num_haps
+
+    # mutation
+    mutated_freqs = (
+        hap_freqs * (1 - mu_1_to_0)
+        + (1 - hap_freqs) * mu_0_to_1
+    )
+
+    # selection in paternal gametes
+    paternal_0 = (1 - mutated_freqs)
+    paternal_1 = mutated_freqs * (1 - s_hemi)
+    total_living_paternal = paternal_0 + paternal_1
+    total_living_paternal[total_living_paternal == 0] = 1.0
+    paternal_0 = paternal_0 / total_living_paternal
+    paternal_1 = paternal_1 / total_living_paternal
+    paternal_freqs = paternal_1
+
+    # selection in maternal gametes
+    maternal_00 = (1 - mutated_freqs)**2
+    maternal_01 = 2 * mutated_freqs * (1 - mutated_freqs) * (1 - s_het)
+    maternal_11 = mutated_freqs**2 * (1-s_hom)
+    total_living_maternal = maternal_00 + maternal_01 + maternal_11
+    total_living_maternal[total_living_maternal == 0] = 1.0
+    maternal_00 = maternal_00 / total_living_maternal
+    maternal_01 = maternal_01 / total_living_maternal
+    maternal_11 = maternal_11 / total_living_maternal
+    maternal_freqs = 0.5*maternal_01 + maternal_11
+
+    # combined frequencies
+    return (2/3) * maternal_freqs + (1/3) * paternal_freqs
+
+
 def wright_fisher_ps_mutate_first(
     pop_size: int,
     mu_0_to_1: torch.DoubleTensor,
@@ -185,6 +265,12 @@ def wright_fisher_ps_mutate_first(
             for the "1" allele. If not provided, defaults to an additive model
             with s_hom being min([2*s_het, 1]). Represented as a
             torch.DoubleTensor scalar
+
+    Returns:
+        A torch.DoubleTensor containing the expected frequencies in the next
+        generation given a current frequency. In partciular given a current
+        frequncy of i/pop_size, the ith entry of the result will contain the
+        expected frequency in the next generation.
     """
 
     # Make sure provided arguments are valid

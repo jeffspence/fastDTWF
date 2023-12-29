@@ -117,6 +117,92 @@ def test_wright_fisher_ps_mutate_first():
     assert torch.allclose(other_nudge_ps, (1-1e-5)*freqs)
 
 
+def test_wright_fisher_ps_mutate_first_x_chr():
+    zero_tensor = torch.tensor(0, dtype=torch.float64)
+    test_ps = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000, zero_tensor, zero_tensor, zero_tensor, zero_tensor, zero_tensor
+    )
+    freqs = torch.arange(1001, dtype=torch.float64) / 1000
+    assert torch.allclose(test_ps, freqs)
+
+    one_tensor = torch.tensor(1, dtype=torch.float64)
+    test_ps = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*2e-5,
+        one_tensor*1e-5
+    )
+    assert torch.all(test_ps >= zero_tensor)
+    assert torch.all(test_ps <= one_tensor)
+
+    nudge_1 = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-5 - 1e-7,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*2e-5,
+        one_tensor*1e-5
+    )
+    nudge_2 = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-5,
+        one_tensor*1e-5 + 1e-7,
+        one_tensor*1e-5,
+        one_tensor*2e-5,
+        one_tensor*1e-5
+    )
+    nudge_3 = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*1e-5 + 1e-7,
+        one_tensor*2e-5 + 2e-7,
+        one_tensor*1e-5
+    )
+    nudge_4 = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*2e-5 + 1e-7,
+        one_tensor*1e-5
+    )
+    nudge_5 = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*1e-5,
+        one_tensor*2e-5,
+        one_tensor*1e-5 + 1e-7
+    )
+
+    assert torch.all(nudge_1 <= test_ps)
+    assert torch.all(nudge_2 <= test_ps)
+    assert torch.all(nudge_3 <= test_ps), torch.max(nudge_3 - test_ps)
+    assert torch.all(nudge_4 <= test_ps)
+    assert torch.all(nudge_5 <= test_ps)
+
+    recessive = fastDTWF.wright_fisher_ps_mutate_first_x_chr(
+        1000,
+        one_tensor*1e-3,
+        one_tensor*1e-3,
+        zero_tensor,
+        one_tensor*1e-5,
+        one_tensor*1e-5
+    )
+    true_recessive = fastDTWF.wright_fisher_ps_mutate_first(
+        1000,
+        one_tensor*1e-3,
+        one_tensor*1e-3,
+        zero_tensor,
+        one_tensor*1e-5
+    )
+
+    assert torch.allclose(recessive, true_recessive)
+
+
 def test_numba_hyp_pmf_single():
     check = fastDTWF._numba_hyp_pmf_single(3, 100, 45, 17)
     true = scipy.stats.hypergeom.pmf(3, 100, 17, 45)
