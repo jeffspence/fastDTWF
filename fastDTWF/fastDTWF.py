@@ -549,15 +549,21 @@ def project_to_coarse(
 
     # Multiply each entry of the vector by the normalizer, and then divide by
     # the total amount of normalizer in each index set so that the weights sum
-    # to one.
-    res = proj.matmul(vec * normalizer)
+    # to one. For places where there is no mass, do a standard average
     proj_normalizer = proj.matmul(normalizer)
 
-    # If the total weight in an index set is 0, normalizing it will result in a
-    # divide by zero, so instead we set it to 1. This causes the resulting
-    # projected vector to be zero for this index set as all of the weights will
-    # be zero.
-    proj_normalizer[proj_normalizer == 0] = 1.0
+    to_add = torch.zeros_like(normalizer)
+    if torch.any(proj_normalizer == 0):
+        proj_ones = proj.matmul(torch.ones_like(normalizer))
+        proj_zeros = torch.zeros_like(proj_normalizer)
+        proj_zeros[proj_normalizer == 0] = 1.0
+        where_zero = proj.T.matmul(proj_zeros)
+        to_add[where_zero != 0.] = 1.0
+        proj_normalizer[proj_normalizer == 0] = proj_ones[
+            proj_normalizer == 0
+        ]
+
+    res = proj.matmul(vec * (normalizer+to_add))
 
     return res / proj_normalizer
 
