@@ -846,6 +846,28 @@ def test_equilibrium_solve():
         )
         assert np.allclose(eq_check, next_gen)
 
+        eq_check = fastDTWF.equilibrium_solve(
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            False,
+            False,
+            None,
+            True
+        )
+        next_gen = fastDTWF.mat_multiply(
+            eq_check,
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            False,
+            False,
+            0.
+        )
+        assert np.allclose(eq_check, next_gen)
+
         index_sets = fastDTWF.coarse_grain(
             ps, 1000, 0.1, True, False
         )
@@ -856,6 +878,28 @@ def test_equilibrium_solve():
             1e-8,
             True,
             False
+        )
+        next_gen = fastDTWF.mat_multiply(
+            eq_check,
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            True,
+            False,
+            0.
+        )
+        assert np.allclose(eq_check, next_gen)
+
+        eq_check = fastDTWF.equilibrium_solve(
+            index_sets,
+            ps,
+            1000,
+            1e-8,
+            True,
+            False,
+            None,
+            True
         )
         next_gen = fastDTWF.mat_multiply(
             eq_check,
