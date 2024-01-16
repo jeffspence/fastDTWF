@@ -846,6 +846,7 @@ def test_equilibrium_solve():
         )
         assert np.allclose(eq_check, next_gen)
 
+        # checking intense stationary
         eq_check = fastDTWF.equilibrium_solve(
             index_sets,
             ps,
@@ -867,6 +868,11 @@ def test_equilibrium_solve():
             0.
         )
         assert np.allclose(eq_check, next_gen)
+        assert all(
+            np.abs(eq_check - next_gen)[eq_check > 0]
+            / eq_check[eq_check > 0]
+            < 1e-3
+        )
 
         index_sets = fastDTWF.coarse_grain(
             ps, 1000, 0.1, True, False
@@ -891,6 +897,7 @@ def test_equilibrium_solve():
         )
         assert np.allclose(eq_check, next_gen)
 
+        # checking intense stationary
         eq_check = fastDTWF.equilibrium_solve(
             index_sets,
             ps,
@@ -912,6 +919,11 @@ def test_equilibrium_solve():
             0.
         )
         assert np.allclose(eq_check, next_gen)
+        assert all(
+            np.abs(eq_check - next_gen)[eq_check > 0]
+            / eq_check[eq_check > 0]
+            < 1e-3
+        )
 
         index_sets = fastDTWF.coarse_grain(
             ps, 1000, 0.1, False, True
