@@ -1331,6 +1331,7 @@ def equilibrium_solve(
     no_fix: bool,
     sfs: bool = False,
     injection_rate: float = None,
+    high_precision_stationary: bool = False,
 ) -> torch.DoubleTensor:
     """
     Quickly compute the equilibrium of a DTWF model
@@ -1358,6 +1359,11 @@ def equilibrium_solve(
             sites assumption) or not.
         injection_rate: If using the SFS, the rate (per individual) at which
             mutations enter the population.
+        high_precision_stationary: It true, then fastDTWF will perform a large
+            number of power iterations to ensure that the stationary
+            distribution is accurate across the full range of values. If false,
+            then the stationary distribution may be relatively inaccurate for
+            extremely low probability entries of the stationay distribution.
 
     Returns:
         A torch.DoubleTensor where entry i is the stationary probability of
@@ -1389,7 +1395,8 @@ def equilibrium_solve(
             row_eps,
             no_fix,
             sfs,
-            injection_rate
+            injection_rate,
+            high_precision_stationary
         )
         new_trunc_ps = project_to_coarse(p_list, index_sets, res)
         err = torch.sum(torch.abs(res - old_res))
@@ -1454,6 +1461,7 @@ def _one_step_solve(
     no_fix: bool,
     sfs: bool = False,
     injection_rate: float = None,
+    high_precision_stationary: bool = False,
 ) -> torch.DoubleTensor:
     """
     Get the equilibrium of a condensed matrix
@@ -1529,9 +1537,20 @@ def _one_step_solve(
         vec[keep] = eigvec
 
         # power iterations provide some stability
-        for _ in range(50):
-            vec = orig_mat.T.matmul(vec)
-        vec /= vec.sum()
+        if high_precision_stationary:
+            err = 1.
+            for _ in range(500000):
+                new_vec = orig_mat.T.matmul(vec)
+                new_vec /= new_vec.sum()
+                err = 0.5*err + 0.5*torch.max(
+                    torch.abs(new_vec - vec)[new_vec > 0]
+                    / new_vec[new_vec > 0]
+                )
+                vec = new_vec
+                if err < 1e-5:
+                    break
+            if err > 1e-5:
+                logging.info('Warning! stationary did not converge')
 
     else:
         eigvals, eigvecs = torch.linalg.eig(mat.T)
@@ -1539,9 +1558,20 @@ def _one_step_solve(
         vec = eigvec / eigvec.sum()
 
         # power iterations provide some stability
-        for _ in range(50):
-            vec = orig_mat.T.matmul(vec)
-        vec /= vec.sum()
+        if high_precision_stationary:
+            err = 1.
+            for _ in range(500000):
+                new_vec = orig_mat.T.matmul(vec)
+                new_vec /= new_vec.sum()
+                err = 0.5*err + 0.5*torch.max(
+                    torch.abs(new_vec - vec)[new_vec > 0]
+                    / new_vec[new_vec > 0]
+                )
+                vec = new_vec
+                if err < 1e-5:
+                    break
+            if err > 1e-5:
+                logging.info('Warning! stationary did not converge')
 
     # Regardless of we got the stationary, we now need to convert the
     # stationary of the coarse grained process to the stationary of the
@@ -1847,6 +1877,7 @@ def get_likelihood(
     s_hom: torch.DoubleTensor = None,
     use_condensed: bool = False,
     refresh_gens: float = float('inf'),
+    high_precision_stationary: bool = False
 ) -> torch.DoubleTensor:
     """
     Compute sample likelihoods under the DTWF model
@@ -1917,6 +1948,11 @@ def get_likelihood(
             generations, the "condensed" transition matrix will be recomputed
             This trades off speed and accuracy, with higher values being less
             accurate but faster.
+        high_precision_stationary: It true, then fastDTWF will perform a large
+            number of power iterations to ensure that the stationary
+            distribution is accurate across the full range of values. If false,
+            then the stationary distribution may be relatively inaccurate for
+            extremely low probability entries of the stationay distribution.
 
     Returns:
         A torch.DoubleTensor where entry i is the value of the sample
@@ -1956,6 +1992,7 @@ def get_likelihood(
         no_fix,
         sfs,
         injection_rate,
+        high_precision_stationary
     )
 
     # Evolve the population distributions through the intervals up to the end
