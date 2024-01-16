@@ -1438,7 +1438,11 @@ def _pick_eigenvec(
         torch.abs(eigvecs).sum(dim=0) - torch.abs(eigvecs.sum(dim=0))
     )
 
-    eigvec = torch.abs(eigvecs[:, best])
+    angle = torch.angle(eigvecs[:, best].sum())
+    imag = torch.zeros(1, dtype=torch.complex128)
+    imag.imag = 1
+    eigvec = (eigvecs[:, best] * torch.exp(-imag * angle)).real
+    eigvec[eigvec < 0] = 0.
     return eigvec
 
 
@@ -1483,7 +1487,7 @@ def _one_step_solve(
         A torch.DoubleTensor where entry i is the stationary probbility
     """
 
-    mat = make_condensed_matrix(
+    orig_mat = make_condensed_matrix(
         index_sets,
         trunc_p_list,
         pop_size,
@@ -1492,6 +1496,7 @@ def _one_step_solve(
         sfs,
         injection_rate
     )
+    mat = orig_mat.detach().clone()
 
     # For the three cases below the logic is very similar to that described in
     # the comments of naive_equilibrium solve. We just need to take care to
@@ -1523,10 +1528,20 @@ def _one_step_solve(
         vec = torch.zeros(mat.shape[0] + 1, dtype=torch.float64)
         vec[keep] = eigvec
 
+        # power iterations provide some stability
+        for _ in range(50):
+            vec = orig_mat.T.matmul(vec)
+        vec /= vec.sum()
+
     else:
         eigvals, eigvecs = torch.linalg.eig(mat.T)
         eigvec = _pick_eigenvec(eigvals, eigvecs)
         vec = eigvec / eigvec.sum()
+
+        # power iterations provide some stability
+        for _ in range(50):
+            vec = orig_mat.T.matmul(vec)
+        vec /= vec.sum()
 
     # Regardless of we got the stationary, we now need to convert the
     # stationary of the coarse grained process to the stationary of the
