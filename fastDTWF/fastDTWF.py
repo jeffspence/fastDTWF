@@ -1387,8 +1387,9 @@ def equilibrium_solve(
 
     # This loop computes the new equilibrium, and the new representative
     # success probabilities and then computes how much they've changed
+    guess = None
     while err > 1e-8 and idx < 15:
-        res = _one_step_solve(
+        res, guess = _one_step_solve(
             index_sets,
             curr_trunc_ps,
             pop_size,
@@ -1396,7 +1397,8 @@ def equilibrium_solve(
             no_fix,
             sfs,
             injection_rate,
-            high_precision_stationary
+            high_precision_stationary,
+            guess
         )
         new_trunc_ps = project_to_coarse(p_list, index_sets, res)
         err = torch.sum(torch.abs(res - old_res))
@@ -1405,52 +1407,6 @@ def equilibrium_solve(
         idx += 1
 
     return res
-
-
-def _pick_eigenvec(
-    eigvals: torch.Tensor, eigvecs: torch.Tensor
-) -> torch.DoubleTensor:
-    """
-    Pick the "best" eigenvector
-
-    When computing stationary distributions we have to solve an eigenvalue
-    problem, and sometimes those eigenvalue problems result in several
-    plausible solutions. We know that the solution we want should have a real
-    eigenvalue and also that all of the entries in the solution should have the
-    same sign (since they will correspond to a probability distribution).
-
-    Args:
-        eigvals: Complex eigenvalues of a matrix, represented as a torch.Tensor
-        eigvecs: Complex eigenvectors of a matrix, represented as a
-            torch.Tensor
-
-    Returns:
-        A torch.DoubleTensor containing the eigenvector that has a large
-        enough, purely real eigenvalue such that all of the entries have the
-        same sign
-    """
-
-    # Eigenvalue should be real, and should be close to 1.
-    kept_vals = np.where(
-        torch.logical_and(torch.abs(eigvals.imag) < 1e-12, eigvals.real > 0.9)
-    )[0]
-    eigvals = eigvals[kept_vals]
-    eigvecs = eigvecs[:, kept_vals]
-
-    # Check if all of the entries have the same sign -- if they have the same
-    # sign then the absolute value of the sum should be equal to the sum of the
-    # absolute values.  Otherwise, the sum of the absolute values will be
-    # larger.
-    best = torch.argmin(
-        torch.abs(eigvecs).sum(dim=0) - torch.abs(eigvecs.sum(dim=0))
-    )
-
-    angle = torch.angle(eigvecs[:, best].sum())
-    imag = torch.zeros(1, dtype=torch.complex128)
-    imag.imag = 1
-    eigvec = (eigvecs[:, best] * torch.exp(-imag * angle)).real
-    eigvec[eigvec < 0] = 0.
-    return eigvec
 
 
 def _one_step_solve(
@@ -1462,6 +1418,7 @@ def _one_step_solve(
     sfs: bool = False,
     injection_rate: float = None,
     high_precision_stationary: bool = False,
+    guess: torch.DoubleTensor = None
 ) -> torch.DoubleTensor:
     """
     Get the equilibrium of a condensed matrix
@@ -1527,14 +1484,23 @@ def _one_step_solve(
         vec[index_sets[0]] = 0
 
     elif no_fix:
+        if guess is None:
+            guess = torch.zeros(mat.shape[0], dtype=torch.float64)
+            guess[torch.arange(mat.shape[0]) == index_sets[0]] = 1.
         keep = torch.arange(mat.shape[0]) != index_sets[-1]
+        lost = 1. - torch.sum(mat[keep], dim=1, keepdim=True)
         mat = mat[keep, :]
         mat = mat[:, keep]
-        eigvals, eigvecs = torch.linalg.eig(mat.T)
-        eigvec = _pick_eigenvec(eigvals, eigvecs)
-        eigvec = eigvec / eigvec.sum()
+        diag = torch.arange(mat.shape[0])
+        mat[diag, diag] -= 1.
+        e1 = torch.zeros(mat.shape[0], dtype=torch.float64)
+        e1[-1] = 1.
+        mat += guess[keep] * lost
+        mat[:, -1] = 1.
+        res = torch.linalg.solve(mat.T, e1)
+        res /= res.sum()
         vec = torch.zeros(mat.shape[0] + 1, dtype=torch.float64)
-        vec[keep] = eigvec
+        vec[keep] = res
 
         # power iterations provide some stability
         if high_precision_stationary:
@@ -1551,11 +1517,15 @@ def _one_step_solve(
                     break
             if err > 1e-5:
                 logging.info('Warning! stationary did not converge')
-
+        guess = vec
     else:
-        eigvals, eigvecs = torch.linalg.eig(mat.T)
-        eigvec = _pick_eigenvec(eigvals, eigvecs)
-        vec = eigvec / eigvec.sum()
+        e1 = torch.zeros(mat.shape[0], dtype=torch.float64)
+        e1[-1] = 1.
+        diag = torch.arange(mat.shape[0])
+        mat[diag, diag] -= 1.
+        mat[:, -1] = 1.
+        vec = torch.linalg.solve(mat.T, e1)
+        vec = vec / vec.sum()
 
         # power iterations provide some stability
         if high_precision_stationary:
@@ -1580,7 +1550,7 @@ def _one_step_solve(
         vec, trunc_p_list, pop_size, row_eps, no_fix, sfs, injection_rate
     )
 
-    return res
+    return res, guess
 
 
 def mat_multiply(

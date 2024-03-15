@@ -950,41 +950,6 @@ def test_equilibrium_solve():
         assert np.allclose(eq_check, next_gen)
 
 
-def test_pick_eigenvec():
-    for _ in range(10):
-        t_mat = np.random.random((100, 100))
-        t_mat /= t_mat.sum(axis=1, keepdims=True)
-        t_mat = torch.tensor(t_mat, dtype=torch.float64)
-        eigvals, eigvecs = torch.linalg.eig(t_mat.T)
-        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs)
-        true_idx = torch.argmax(eigvals.real)
-        eigvec_true = torch.abs(eigvecs[:, true_idx])
-        assert torch.allclose(eigvec_check, eigvec_true)
-
-        # should be fine under arbitrary complex rotations
-        eigvecs_i = eigvecs * torch.complex(
-            torch.tensor(0, dtype=torch.float64),
-            torch.tensor(1, dtype=torch.float64)
-        )
-        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_i)
-        assert torch.allclose(eigvec_check, eigvec_true)
-
-        eigvecs_neg = -1 * eigvecs
-        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_neg)
-        assert torch.allclose(eigvec_check, eigvec_true)
-
-        eigvecs_mi = -eigvecs_i
-        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_mi)
-        assert torch.allclose(eigvec_check, eigvec_true)
-
-        eigvecs_comp = eigvecs * torch.complex(
-            torch.tensor(np.sqrt(1/2), dtype=torch.float64),
-            torch.tensor(np.sqrt(1/2), dtype=torch.float64)
-        )
-        eigvec_check = fastDTWF._pick_eigenvec(eigvals, eigvecs_comp)
-        assert torch.allclose(eigvec_check, eigvec_true)
-
-
 def test_one_step_solve():
     for _ in range(10):
         mu_1 = np.random.random() * 1e-8
@@ -1002,7 +967,7 @@ def test_one_step_solve():
         vec = torch.tensor(np.random.random(1001), dtype=torch.float64)
         vec /= vec.sum()
         trunc_ps = fastDTWF.project_to_coarse(ps, index_sets, vec)
-        eq_check = fastDTWF._one_step_solve(
+        eq_check, guess = fastDTWF._one_step_solve(
             index_sets,
             trunc_ps,
             1000,
@@ -1029,7 +994,7 @@ def test_one_step_solve():
         vec[-1] = 0.
         vec /= vec.sum()
         trunc_ps = fastDTWF.project_to_coarse(ps, index_sets, vec)
-        eq_check = fastDTWF._one_step_solve(
+        eq_check, guess = fastDTWF._one_step_solve(
             index_sets,
             trunc_ps,
             1000,
@@ -1057,7 +1022,7 @@ def test_one_step_solve():
         vec[-1] = 0.
         vec /= vec.sum()
         trunc_ps = fastDTWF.project_to_coarse(ps, index_sets, vec)
-        eq_check = fastDTWF._one_step_solve(
+        eq_check, guess = fastDTWF._one_step_solve(
             index_sets,
             trunc_ps,
             1000,
