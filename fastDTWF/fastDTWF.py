@@ -740,12 +740,12 @@ def make_condensed_matrix(
         mean_val = torch.round(pop_size * prob)
         sd_val = np.sqrt(-pop_size * np.log(row_eps) / 2)
         kmin = int(mean_val - sd_val)
-        if kmin < 0:
+        if kmin < 0 or (sfs and kmin < 1):
             kmin = 0
             if sfs:
                 kmin = 1
         kmax = int(mean_val + sd_val) + 1
-        if kmax > pop_size:
+        if kmax > pop_size or ((sfs or no_fix) and kmax > pop_size-1):
             kmax = pop_size
             if sfs or no_fix:
                 kmax = pop_size - 1
