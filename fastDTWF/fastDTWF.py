@@ -1498,6 +1498,7 @@ def _one_step_solve(
         mat += guess[keep] * lost
         mat[:, -1] = 1.
         res = torch.linalg.solve(mat.T, e1)
+        res[res < 0.] = 0.
         res /= res.sum()
         vec = torch.zeros(mat.shape[0] + 1, dtype=torch.float64)
         vec[keep] = res
@@ -1525,6 +1526,7 @@ def _one_step_solve(
         mat[diag, diag] -= 1.
         mat[:, -1] = 1.
         vec = torch.linalg.solve(mat.T, e1)
+        vec[vec < 0] = 0.
         vec = vec / vec.sum()
 
         # power iterations provide some stability
